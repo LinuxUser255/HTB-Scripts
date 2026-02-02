@@ -4,7 +4,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/LinuxUser255/HTB-Scripts?style=social)](https://github.com/LinuxUser255/HTB-Scripts/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/LinuxUser255/HTB-Scripts?style=social)](https://github.com/LinuxUser255/HTB-Scripts/network/members)
 
-A personal collection of Bash and Python scripts useful for **Hack The Box**, penetration testing, Active Directory enumeration, credential hunting, and post-exploitation tasks.
+A personal collection of Bash scripts useful for **Hack The Box**, penetration testing, Active Directory enumeration, credential hunting, and post-exploitation tasks.
 
 ## Features
 
