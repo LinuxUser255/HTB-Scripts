@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #===============================================================================
-# Android System Dump Enumeration Script
+# Android Enumeration & Sensitive Data Discovery Script
 # Automates information discovery for mobile pentesting scenarios
-# Usage: ./android_enum.sh [-s SYSTEM_DIR] [-o OUTPUT_DIR] [-v] [-l] [-p PKG] [-x]
+# Works on: System dumps (/data/system), Decompiled APKs (apktool), or any dir
+# Usage: ./android_enum.sh [OPTIONS] [TARGET_DIR]
 #===============================================================================
 
 set -euo pipefail
@@ -11,15 +12,16 @@ IFS=$'\n\t'
 #-------------------------------------------------------------------------------
 # Configuration & Globals
 #-------------------------------------------------------------------------------
-readonly VERSION="1.0.0"
+readonly VERSION="2.0.0"
 readonly TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-SYSTEM_DIR="./system"
+TARGET_DIR="."
 OUTPUT_DIR="./analysis_output"
 VERBOSE=0
 LOGGING=0
 TARGET_PKG=""
 SKIP_TO_HASH=0
 LOG_FILE=""
+MODE="auto"  # auto, apk, system, general
 
 #-------------------------------------------------------------------------------
 # Color Codes
@@ -146,31 +148,96 @@ check_requirements(){
 #-------------------------------------------------------------------------------
 usage(){
         cat <<-EOF
-	${C_BLU}Android System Dump Enumeration v${VERSION}${C_RST}
+	${C_BLU}Android Enumeration & Sensitive Data Discovery v${VERSION}${C_RST}
 
-	Usage: ${0##*/} [OPTIONS]
+	Usage: ${0##*/} [OPTIONS] [TARGET_DIR]
 
-	Options:
-	  -s DIR    System directory path (default: ./system)
-	  -o DIR    Output directory (default: ./analysis_output)
-	  -p PKG    Target package name for detailed analysis
-	  -v        Verbose output
+	${C_CYN}Description:${C_RST}
+	  Point this script at any Android-related directory to hunt for sensitive
+	  data: API keys, secrets, credentials, endpoints, lock hashes, and more.
+	  Auto-detects directory type (APK output, system dump, or general).
+
+	${C_CYN}Options:${C_RST}
+	  -d DIR    Target directory to analyze (or pass as positional arg)
+	  -o DIR    Output directory for results (default: ./analysis_output)
+	  -m MODE   Force mode: apk, system, general, or auto (default: auto)
+	  -p PKG    Target package name for focused analysis
+	  -v        Verbose output (show all commands)
 	  -l        Enable logging to file
-	  -x        Skip to hash extraction (if lock DB found)
-	  -h        Show this help
+	  -x        Skip to hash extraction (system dumps only)
+	  -h        Show this help with examples
 
-	Examples:
-	  ${0##*/} -s /path/to/system -o ./results -v
-	  ${0##*/} -p com.example.app -x
+	${C_CYN}Modes:${C_RST}
+	  auto      Auto-detect based on directory contents
+	  apk       Decompiled APK analysis (apktool output)
+	  system    Android system dump (/data/system)
+	  general   Generic sensitive data scan (any directory)
+
+	${C_MAG}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RST}
+	${C_YLW}EXAMPLES:${C_RST}
+	${C_MAG}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RST}
+
+	${C_GRN}# Decompiled APK Analysis (most common workflow):${C_RST}
+	  apktool d target.apk -o ./decompiled
+	  ${0##*/} ./decompiled -v
+
+	${C_GRN}# APK with custom output directory:${C_RST}
+	  ${0##*/} -d ./decompiled -o ./target_results -l
+
+	${C_GRN}# Force APK mode on ambiguous directory:${C_RST}
+	  ${0##*/} -m apk ./some_dir
+
+	${C_GRN}# System dump from device extraction:${C_RST}
+	  adb pull /data/system ./system_dump
+	  ${0##*/} -m system ./system_dump -x
+
+	${C_GRN}# Just extract lock hashes (skip enumeration):${C_RST}
+	  ${0##*/} ./system_dump -x
+
+	${C_GRN}# Analyze specific package in system dump:${C_RST}
+	  ${0##*/} ./system -p com.target.app -v
+
+	${C_GRN}# Scan any directory for secrets (CTF, backup, etc.):${C_RST}
+	  ${0##*/} -m general ./extracted_backup
+
+	${C_GRN}# Recursive scan of multiple APK outputs:${C_RST}
+	  for d in ./apks/*/; do ${0##*/} "\$d" -o "./results/\$(basename \$d)"; done
+
+	${C_GRN}# Pipe-friendly: just get secrets (combine with jq, etc.):${C_RST}
+	  ${0##*/} ./app -v 2>/dev/null | rg -o 'Found:.*'
+
+	${C_MAG}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RST}
+	${C_YLW}WHAT IT FINDS:${C_RST}
+	${C_MAG}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RST}
+
+	${C_CYN}APK Mode:${C_RST}
+	  • AndroidManifest.xml: permissions, exported components, debuggable
+	  • strings.xml/resources: hardcoded secrets, API endpoints
+	  • smali: API keys, crypto, reflection, native libs, URLs
+	  • assets/raw: config files, certs, embedded DBs
+
+	${C_CYN}System Mode:${C_RST}
+	  • packages.xml: installed apps, permissions, UIDs
+	  • device_policies.xml: lock types, admin policies
+	  • locksettings.db: password hashes, salts
+	  • *.key files: SHA-1/MD5 hashes for cracking
+
+	${C_CYN}General Mode:${C_RST}
+	  • API keys, tokens, secrets in any file
+	  • Hardcoded credentials, passwords
+	  • URLs, endpoints, IP addresses
+	  • Private keys, certificates
+
 	EOF
         exit 0
 }
 
 parse_args(){
-        while getopts ":s:o:p:vlxh" opt; do
+        while getopts ":d:o:m:p:vlxh" opt; do
                 case "$opt" in
-                        s) SYSTEM_DIR="$OPTARG" ;;
+                        d) TARGET_DIR="$OPTARG" ;;
                         o) OUTPUT_DIR="$OPTARG" ;;
+                        m) MODE="$OPTARG" ;;
                         p) TARGET_PKG="$OPTARG" ;;
                         v) VERBOSE=1 ;;
                         l) LOGGING=1 ;;
@@ -182,12 +249,18 @@ parse_args(){
         done
         shift $((OPTIND - 1))
 
-        # Validate system directory
-        dir_exists "$SYSTEM_DIR" || die "System directory not found: $SYSTEM_DIR"
+        # Positional argument takes precedence for target dir
+        [[ $# -gt 0 ]] && TARGET_DIR="$1"
+
+        # Validate target directory
+        dir_exists "$TARGET_DIR" || die "Target directory not found: $TARGET_DIR"
+        TARGET_DIR=$(realpath "$TARGET_DIR")
 
         # Create output directory
         mkdir -p "$OUTPUT_DIR" || die "Cannot create output directory"
-        log_info "Output directory: $OUTPUT_DIR"
+        OUTPUT_DIR=$(realpath "$OUTPUT_DIR")
+        log_info "Target: $TARGET_DIR"
+        log_info "Output: $OUTPUT_DIR"
 
         # Setup logging
         ((LOGGING)) && {
@@ -195,21 +268,317 @@ parse_args(){
                 : > "$LOG_FILE"
                 log_info "Logging to: $LOG_FILE"
         }
+
+        # Auto-detect mode if needed
+        [[ "$MODE" == "auto" ]] && detect_mode
+        log_info "Mode: $MODE"
 }
 
 #-------------------------------------------------------------------------------
-# Package Enumeration Module
+# Mode Detection
+#-------------------------------------------------------------------------------
+detect_mode(){
+        log_dbg "Auto-detecting directory type..."
+
+        # Check for APK decompiled markers
+        [[ -f "${TARGET_DIR}/AndroidManifest.xml" ]] && { MODE="apk"; return; }
+        [[ -d "${TARGET_DIR}/smali" ]] && { MODE="apk"; return; }
+        [[ -d "${TARGET_DIR}/res" && -d "${TARGET_DIR}/original" ]] && { MODE="apk"; return; }
+
+        # Check for system dump markers
+        [[ -f "${TARGET_DIR}/packages.xml" ]] && { MODE="system"; return; }
+        [[ -f "${TARGET_DIR}/packages.list" ]] && { MODE="system"; return; }
+        [[ -f "${TARGET_DIR}/locksettings.db" ]] && { MODE="system"; return; }
+
+        # Default to general
+        MODE="general"
+}
+
+#-------------------------------------------------------------------------------
+# APK Analysis Module
+#-------------------------------------------------------------------------------
+analyze_apk(){
+        log_section "APK Analysis: $TARGET_DIR"
+        local manifest="${TARGET_DIR}/AndroidManifest.xml"
+
+        # Analyze AndroidManifest.xml
+        file_exists "$manifest" && {
+                log_info "Parsing AndroidManifest.xml..."
+
+                # Extract package name
+                local pkg_name
+                pkg_name=$(rg -o 'package="[^"]+"' "$manifest" | head -1 | cut -d'"' -f2 || true)
+                [[ -n "$pkg_name" ]] && {
+                        log_info "Package: $pkg_name"
+                        printf '%s' "$pkg_name" > "${OUTPUT_DIR}/package_name.txt"
+                }
+
+                # Check for dangerous flags
+                log_info "Checking for dangerous manifest flags..."
+                local dangerous_flags
+                dangerous_flags=$(
+                        rg -i 'android:debuggable="true"|android:allowBackup="true"|android:usesCleartextTraffic="true"|android:exported="true"' "$manifest" || true
+                )
+                [[ -n "$dangerous_flags" ]] && {
+                        save_output "manifest_dangerous_flags" "$dangerous_flags"
+                        log_warn "Found dangerous manifest flags!"
+                }
+
+                # Extract permissions
+                log_info "Extracting permissions..."
+                local perms
+                perms=$(rg -o 'android:name="android\.permission\.[^"]+"' "$manifest" | sort -u || true)
+                [[ -n "$perms" ]] && save_output "manifest_permissions" "$perms"
+
+                # Dangerous permissions check
+                local dangerous_perms
+                dangerous_perms=$(rg -i 'INTERNET|READ_EXTERNAL|WRITE_EXTERNAL|READ_CONTACTS|ACCESS_FINE_LOCATION|CAMERA|RECORD_AUDIO|READ_SMS|RECEIVE_SMS|READ_CALL_LOG' "$manifest" || true)
+                [[ -n "$dangerous_perms" ]] && save_output "dangerous_permissions" "$dangerous_perms"
+
+                # Exported components (potential attack surface)
+                log_info "Finding exported components..."
+                local exported
+                exported=$(rg -B2 -A5 'android:exported="true"' "$manifest" || true)
+                [[ -n "$exported" ]] && save_output "exported_components" "$exported"
+
+                # Intent filters (deeplinks, schemes)
+                log_info "Extracting intent filters/deeplinks..."
+                local intents
+                intents=$(rg -A10 '<intent-filter' "$manifest" | rg -i 'scheme|host|path|action|category' || true)
+                [[ -n "$intents" ]] && save_output "intent_filters" "$intents"
+        }
+
+        # Scan resources
+        scan_apk_resources
+
+        # Scan smali code
+        scan_apk_smali
+
+        # Scan assets
+        scan_apk_assets
+
+        # General secrets scan
+        scan_secrets
+}
+
+scan_apk_resources(){
+        log_info "Scanning resources for secrets..."
+        local res_dir="${TARGET_DIR}/res"
+
+        dir_exists "$res_dir" || return 0
+
+        # strings.xml analysis
+        local strings_files
+        strings_files=$(find "$res_dir" -name "strings.xml" 2>/dev/null || true)
+        [[ -n "$strings_files" ]] && {
+                log_info "Analyzing strings.xml files..."
+                local api_strings
+                api_strings=$(rg -i 'api|key|secret|token|url|endpoint|server|host|password|auth' $strings_files || true)
+                [[ -n "$api_strings" ]] && save_output "resource_strings_sensitive" "$api_strings"
+        }
+
+        # Find hardcoded URLs in resources
+        log_info "Finding URLs in resources..."
+        local urls
+        urls=$(rg -o 'https?://[^"<>\s]+' "$res_dir" 2>/dev/null | sort -u || true)
+        [[ -n "$urls" ]] && save_output "resource_urls" "$urls"
+}
+
+scan_apk_smali(){
+        log_info "Scanning smali for sensitive patterns..."
+
+        # Check for smali or smali_classes* dirs
+        local smali_dirs
+        smali_dirs=$(find "$TARGET_DIR" -maxdepth 1 -type d -name "smali*" 2>/dev/null || true)
+        [[ -z "$smali_dirs" ]] && { log_warn "No smali directories found"; return 0; }
+
+        # API key patterns in smali
+        log_info "Hunting API keys in smali..."
+        local smali_secrets
+        smali_secrets=$(rg -i 'const-string.*\b(api[_-]?key|secret|token|password|bearer|auth)' $smali_dirs 2>/dev/null || true)
+        [[ -n "$smali_secrets" ]] && save_output "smali_secrets" "$smali_secrets"
+
+        # Hardcoded strings that look like keys
+        log_info "Finding potential hardcoded keys..."
+        local hardcoded
+        hardcoded=$(rg 'const-string [vp][0-9]+, "[A-Za-z0-9+/=_-]{20,}"' $smali_dirs 2>/dev/null | rg -v '(android\.|com\.google\.|java\.|kotlin\.)' || true)
+        [[ -n "$hardcoded" ]] && save_output "smali_hardcoded_strings" "$hardcoded"
+
+        # URLs in smali
+        log_info "Extracting URLs from smali..."
+        local smali_urls
+        smali_urls=$(rg -o 'https?://[^"]+' $smali_dirs 2>/dev/null | sort -u || true)
+        [[ -n "$smali_urls" ]] && save_output "smali_urls" "$smali_urls"
+
+        # Crypto usage (potential weak crypto)
+        log_info "Checking crypto usage..."
+        local crypto
+        crypto=$(rg -i 'Ljavax/crypto|Ljava/security|AES|DES|RSA|MD5|SHA1|SecretKeySpec|Cipher' $smali_dirs 2>/dev/null | head -100 || true)
+        [[ -n "$crypto" ]] && save_output "smali_crypto_usage" "$crypto"
+
+        # Native library loading
+        log_info "Finding native library usage..."
+        local native
+        native=$(rg 'System;->loadLibrary|System;->load\(' $smali_dirs 2>/dev/null || true)
+        [[ -n "$native" ]] && save_output "smali_native_libs" "$native"
+
+        # Reflection usage (potential obfuscation)
+        log_info "Checking reflection usage..."
+        local reflection
+        reflection=$(rg 'Ljava/lang/reflect|Class;->forName|Method;->invoke' $smali_dirs 2>/dev/null | head -50 || true)
+        [[ -n "$reflection" ]] && save_output "smali_reflection" "$reflection"
+
+        # WebView JavaScript interfaces (potential XSS)
+        log_info "Finding WebView JS interfaces..."
+        local webview
+        webview=$(rg -i 'addJavascriptInterface|setJavaScriptEnabled|loadUrl|evaluateJavascript' $smali_dirs 2>/dev/null || true)
+        [[ -n "$webview" ]] && save_output "smali_webview_usage" "$webview"
+
+        # SQL queries (potential injection)
+        log_info "Finding SQL patterns..."
+        local sql
+        sql=$(rg -i 'rawQuery|execSQL|SELECT.*FROM|INSERT.*INTO|UPDATE.*SET|DELETE.*FROM' $smali_dirs 2>/dev/null | head -50 || true)
+        [[ -n "$sql" ]] && save_output "smali_sql_queries" "$sql"
+}
+
+scan_apk_assets(){
+        log_info "Scanning assets directory..."
+        local assets_dir="${TARGET_DIR}/assets"
+
+        dir_exists "$assets_dir" || return 0
+
+        # List all assets
+        local asset_list
+        asset_list=$(find "$assets_dir" -type f 2>/dev/null || true)
+        [[ -n "$asset_list" ]] && save_output "assets_list" "$asset_list"
+
+        # Find interesting file types
+        log_info "Finding interesting asset files..."
+        local interesting
+        interesting=$(find "$assets_dir" -type f \( -name "*.json" -o -name "*.xml" -o -name "*.db" -o -name "*.sqlite" -o -name "*.pem" -o -name "*.key" -o -name "*.crt" -o -name "*.p12" -o -name "*.properties" -o -name "*.conf" -o -name "*.cfg" \) 2>/dev/null || true)
+        [[ -n "$interesting" ]] && {
+                save_output "assets_interesting_files" "$interesting"
+                # Scan content of these files
+                for f in $interesting; do
+                        [[ -f "$f" ]] && {
+                                local content
+                                content=$(rg -i 'api|key|secret|token|password|url|endpoint' "$f" 2>/dev/null || true)
+                                [[ -n "$content" ]] && save_output "assets_$(basename "$f")_secrets" "$content"
+                        }
+                done
+        }
+
+        # Scan for Firebase configs
+        log_info "Looking for Firebase/Google configs..."
+        local firebase
+        firebase=$(find "$assets_dir" -name "google-services.json" -o -name "firebase*.json" 2>/dev/null || true)
+        [[ -n "$firebase" ]] && {
+                save_output "firebase_configs" "$firebase"
+                for f in $firebase; do
+                        [[ -f "$f" ]] && cat "$f" >> "${OUTPUT_DIR}/firebase_config_contents_${TIMESTAMP}.txt"
+                done
+        }
+}
+
+#-------------------------------------------------------------------------------
+# General Secrets Scanner
+#-------------------------------------------------------------------------------
+scan_secrets(){
+        log_section "Secrets & Sensitive Data Scan"
+
+        # Broad secrets search
+        log_info "Searching for API keys and tokens..."
+        local secrets
+        secrets=$(rg -i 'api[_-]?key|api[_-]?secret|auth[_-]?token|access[_-]?token|bearer|secret[_-]?key' "$TARGET_DIR" --type-not binary 2>/dev/null | head -200 || true)
+        [[ -n "$secrets" ]] && save_output "secrets_api_keys" "$secrets"
+
+        # Password patterns
+        log_info "Searching for password patterns..."
+        local passwords
+        passwords=$(rg -i 'password\s*[=:]|passwd\s*[=:]|pwd\s*[=:]' "$TARGET_DIR" --type-not binary 2>/dev/null | head -100 || true)
+        [[ -n "$passwords" ]] && save_output "secrets_passwords" "$passwords"
+
+        # AWS keys
+        log_info "Searching for AWS credentials..."
+        local aws
+        aws=$(rg 'AKIA[0-9A-Z]{16}|aws_access_key_id|aws_secret_access_key' "$TARGET_DIR" --type-not binary 2>/dev/null || true)
+        [[ -n "$aws" ]] && {
+                save_output "secrets_aws" "$aws"
+                log_warn "Potential AWS credentials found!"
+        }
+
+        # Google API keys
+        log_info "Searching for Google API keys..."
+        local gcp
+        gcp=$(rg 'AIza[0-9A-Za-z_-]{35}' "$TARGET_DIR" --type-not binary 2>/dev/null || true)
+        [[ -n "$gcp" ]] && {
+                save_output "secrets_google_api" "$gcp"
+                log_warn "Potential Google API key found!"
+        }
+
+        # Private keys
+        log_info "Searching for private keys..."
+        local privkeys
+        privkeys=$(rg -l 'BEGIN (RSA |DSA |EC |OPENSSH )?PRIVATE KEY' "$TARGET_DIR" 2>/dev/null || true)
+        [[ -n "$privkeys" ]] && {
+                save_output "secrets_private_keys" "$privkeys"
+                log_warn "Private key files found!"
+        }
+
+        # JWT tokens
+        log_info "Searching for JWT tokens..."
+        local jwt
+        jwt=$(rg 'eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*' "$TARGET_DIR" --type-not binary 2>/dev/null || true)
+        [[ -n "$jwt" ]] && save_output "secrets_jwt" "$jwt"
+
+        # URLs extraction
+        log_info "Extracting all URLs..."
+        local all_urls
+        all_urls=$(rg -o 'https?://[^"'\''<>\s]+' "$TARGET_DIR" --type-not binary 2>/dev/null | sort -u || true)
+        [[ -n "$all_urls" ]] && save_output "all_urls" "$all_urls"
+
+        # IP addresses
+        log_info "Extracting IP addresses..."
+        local ips
+        ips=$(rg -o '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' "$TARGET_DIR" --type-not binary 2>/dev/null | sort -u | rg -v '^(127\.|0\.|255\.)' || true)
+        [[ -n "$ips" ]] && save_output "ip_addresses" "$ips"
+
+        # Database files
+        log_info "Finding database files..."
+        local dbs
+        dbs=$(find "$TARGET_DIR" -type f \( -name "*.db" -o -name "*.sqlite" -o -name "*.sqlite3" \) 2>/dev/null || true)
+        [[ -n "$dbs" ]] && {
+                save_output "database_files" "$dbs"
+                # Extract strings from small DBs
+                for db in $dbs; do
+                        [[ -f "$db" && $(stat -c%s "$db" 2>/dev/null || stat -f%z "$db" 2>/dev/null) -lt 5000000 ]] && {
+                                local db_strings
+                                db_strings=$(strings "$db" | rg -i 'password|secret|key|token|api' || true)
+                                [[ -n "$db_strings" ]] && save_output "db_$(basename "$db")_strings" "$db_strings"
+                        }
+                done
+        }
+
+        # Config files
+        log_info "Finding config files..."
+        local configs
+        configs=$(find "$TARGET_DIR" -type f \( -name "*.json" -o -name "*.xml" -o -name "*.properties" -o -name "*.conf" -o -name "*.cfg" -o -name "*.yml" -o -name "*.yaml" -o -name "*.env" -o -name ".env*" \) 2>/dev/null || true)
+        [[ -n "$configs" ]] && save_output "config_files" "$configs"
+}
+
+#-------------------------------------------------------------------------------
+# Package Enumeration Module (System Dumps)
 #-------------------------------------------------------------------------------
 enum_packages(){
         log_section "Package Enumeration"
-        local packages_list="${SYSTEM_DIR}/packages.list"
-        local packages_xml="${SYSTEM_DIR}/packages.xml"
+        local packages_list="${TARGET_DIR}/packages.list"
+        local packages_xml="${TARGET_DIR}/packages.xml"
 
         # Initial broad search for secrets in system files
         # Looking for potential API keys or tokens; system configs might leak build-time secrets
         log_info "Searching for secrets/tokens in system files..."
         local secrets
-        secrets=$(run_cmd "secrets search" rg -i 'API_KEY|SECRET|TOKEN|BASE_URL' "$SYSTEM_DIR" || true)
+        secrets=$(run_cmd "secrets search" rg -i 'API_KEY|SECRET|TOKEN|BASE_URL' "$TARGET_DIR" || true)
         [[ -n "$secrets" ]] && {
                 save_output "secrets_search" "$secrets"
                 log_info "Found potential secrets (may be system perms - verify manually)"
@@ -253,7 +622,7 @@ enum_packages(){
                 # Targets file-related vulnerabilities for app access
                 log_info "Searching storage/file permissions..."
                 local storage_perms
-                storage_perms=$(find "$SYSTEM_DIR" -name "packages.xml" -exec rg 'permission.*(storage|file|external)' {} + 2>/dev/null || true)
+                storage_perms=$(find "$TARGET_DIR" -name "packages.xml" -exec rg 'permission.*(storage|file|external)' {} + 2>/dev/null || true)
                 [[ -n "$storage_perms" ]] && save_output "storage_permissions" "$storage_perms"
         fi
 }
@@ -270,7 +639,7 @@ analyze_target_package(){
         }
 
         log_section "Analyzing Package: $pkg"
-        local packages_xml="${SYSTEM_DIR}/packages.xml"
+        local packages_xml="${TARGET_DIR}/packages.xml"
 
         file_exists "$packages_xml" || return 1
 
@@ -290,7 +659,7 @@ analyze_target_package(){
 #-------------------------------------------------------------------------------
 check_policies(){
         log_section "Device Policy Analysis"
-        local policies_xml="${SYSTEM_DIR}/device_policies.xml"
+        local policies_xml="${TARGET_DIR}/device_policies.xml"
 
         # Check device policies for auth clues
         # Reveals lock types/weaknesses that gatekeep backups
@@ -326,7 +695,7 @@ check_policies(){
         # Policies might spill into other files (e.g., appops.xml)
         log_info "Searching all XMLs for policy/admin/restriction..."
         local all_policies
-        all_policies=$(find "$SYSTEM_DIR" -type f -name "*.xml" -exec rg -i 'policy|admin|restriction' {} + 2>/dev/null || true)
+        all_policies=$(find "$TARGET_DIR" -type f -name "*.xml" -exec rg -i 'policy|admin|restriction' {} + 2>/dev/null || true)
         [[ -n "$all_policies" ]] && save_output "all_policy_refs" "$all_policies"
 }
 
@@ -340,13 +709,13 @@ hunt_lock_data(){
         # Finds locksettings.db for querying salts/types
         log_info "Locating database files..."
         local db_files
-        db_files=$(find "$SYSTEM_DIR" -name "*.db" 2>/dev/null || true)
+        db_files=$(find "$TARGET_DIR" -name "*.db" 2>/dev/null || true)
         [[ -n "$db_files" ]] && {
                 save_output "database_files" "$db_files"
                 log_info "Found databases:\n$db_files"
         }
 
-        local lock_db="${SYSTEM_DIR}/locksettings.db"
+        local lock_db="${TARGET_DIR}/locksettings.db"
 
         # Query lock DB for password details
         # Extracts type/salt/quality from locksettings.db (informs cracking strategy)
@@ -379,14 +748,14 @@ hunt_lock_data(){
 #-------------------------------------------------------------------------------
 extract_hashes(){
         log_section "Hash Extraction"
-        local pwd_key="${SYSTEM_DIR}/password.key"
-        local gesture_key="${SYSTEM_DIR}/gesture.key"
+        local pwd_key="${TARGET_DIR}/password.key"
+        local gesture_key="${TARGET_DIR}/gesture.key"
 
         # List files with lock terms
         # Inventories all files with auth clues
         log_info "Finding files with lock-related terms..."
         local lock_files
-        lock_files=$(rg -i 'password|key|salt|hash|pin|pattern' "$SYSTEM_DIR" -l 2>/dev/null || true)
+        lock_files=$(rg -i 'password|key|salt|hash|pin|pattern' "$TARGET_DIR" -l 2>/dev/null || true)
         [[ -n "$lock_files" ]] && save_output "lock_related_files" "$lock_files"
 
         # Process password.key
@@ -495,11 +864,12 @@ prepare_hashcat(){
 generate_summary(){
         log_section "Analysis Summary"
 
-        local summary="Android System Dump Analysis Summary\n"
+        local summary="Android Enumeration Summary\n"
         summary+="=====================================\n"
         summary+="Timestamp: $TIMESTAMP\n"
-        summary+="System Dir: $SYSTEM_DIR\n"
-        summary+="Output Dir: $OUTPUT_DIR\n\n"
+        summary+="Target Dir: $TARGET_DIR\n"
+        summary+="Output Dir: $OUTPUT_DIR\n"
+        summary+="Mode: $MODE\n\n"
 
         summary+="Files Generated:\n"
         local count=0
@@ -531,13 +901,13 @@ generate_summary(){
 # Main Execution
 #-------------------------------------------------------------------------------
 main(){
-        printf "${C_BLU}Android System Dump Enumeration v${VERSION}${C_RST}\n"
+        printf "${C_BLU}Android Enumeration & Sensitive Data Discovery v${VERSION}${C_RST}\n"
         printf "${C_CYN}Starting at: %s${C_RST}\n" "$(date)"
 
         parse_args "$@"
         check_requirements
 
-        # Skip to hash extraction if flag set and lock DB exists
+        # Skip to hash extraction if flag set (system mode only)
         ((SKIP_TO_HASH)) && {
                 log_info "Skipping to hash extraction..."
                 hunt_lock_data && extract_hashes && prepare_hashcat
@@ -545,20 +915,29 @@ main(){
                 exit 0
         }
 
-        # Full enumeration sequence
-        enum_packages
-
-        # Analyze specific package if provided
-        [[ -n "$TARGET_PKG" ]] && analyze_target_package "$TARGET_PKG"
-
-        check_policies
-        hunt_lock_data
-        extract_hashes
-
-        # Offer hashcat prep
-        printf "\n${C_YLW}Prepare Hashcat input? [y/N]:${C_RST} "
-        read -r response
-        [[ "$response" =~ ^[Yy]$ ]] && prepare_hashcat
+        # Execute based on detected/forced mode
+        case "$MODE" in
+                apk)
+                        analyze_apk
+                        ;;
+                system)
+                        enum_packages
+                        [[ -n "$TARGET_PKG" ]] && analyze_target_package "$TARGET_PKG"
+                        check_policies
+                        hunt_lock_data
+                        extract_hashes
+                        # Offer hashcat prep
+                        printf "\n${C_YLW}Prepare Hashcat input? [y/N]:${C_RST} "
+                        read -r response
+                        [[ "$response" =~ ^[Yy]$ ]] && prepare_hashcat
+                        ;;
+                general)
+                        scan_secrets
+                        ;;
+                *)
+                        die "Unknown mode: $MODE"
+                        ;;
+        esac
 
         generate_summary
 
