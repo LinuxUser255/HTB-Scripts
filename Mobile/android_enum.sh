@@ -26,13 +26,13 @@ MODE="auto"  # auto, apk, system, general
 #-------------------------------------------------------------------------------
 # Color Codes
 #-------------------------------------------------------------------------------
-readonly C_RST='\e[0m'
-readonly C_RED='\e[1;31m'
-readonly C_GRN='\e[1;32m'
-readonly C_YLW='\e[1;33m'
-readonly C_BLU='\e[1;34m'
-readonly C_MAG='\e[1;35m'
-readonly C_CYN='\e[1;36m'
+readonly C_RST=$'\e[0m'
+readonly C_RED=$'\e[1;31m'
+readonly C_GRN=$'\e[1;32m'
+readonly C_YLW=$'\e[1;33m'
+readonly C_BLU=$'\e[1;34m'
+readonly C_MAG=$'\e[1;35m'
+readonly C_CYN=$'\e[1;36m'
 
 #-------------------------------------------------------------------------------
 # Logging Functions
