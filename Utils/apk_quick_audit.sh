@@ -3,7 +3,6 @@
 # apk_quick_audit.sh - Fast APK security assessment
 # ./apk_quick_audit.sh app.apk
 
-
 set -euo pipefail
 
 APK="$1"
@@ -21,12 +20,14 @@ echo "[*] Decompiling APK with JADX..."
 jadx -d "$OUTPUT_DIR/decompiled" "$APK" --no-res 2>/dev/null
 
 echo "[*] Running graudit scans..."
+# Store absolute path before changing directory
+ABS_OUTPUT_DIR="$(realpath "$OUTPUT_DIR")"
 cd "$OUTPUT_DIR/decompiled/sources"
 
-graudit -B -z -d android . > "$OUTPUT_DIR/android_vulns.txt" 2>/dev/null || true
-graudit -B -z -d java . > "$OUTPUT_DIR/java_vulns.txt" 2>/dev/null || true
-graudit -B -z -d secrets . > "$OUTPUT_DIR/secrets.txt" 2>/dev/null || true
-graudit -B -z -d sql . > "$OUTPUT_DIR/sql_injection.txt" 2>/dev/null || true
+graudit -B -z -d android . > "$ABS_OUTPUT_DIR/android_vulns.txt" 2>/dev/null || true
+graudit -B -z -d java . > "$ABS_OUTPUT_DIR/java_vulns.txt" 2>/dev/null || true
+graudit -B -z -d secrets . > "$ABS_OUTPUT_DIR/secrets.txt" 2>/dev/null || true
+graudit -B -z -d sql . > "$ABS_OUTPUT_DIR/sql_injection.txt" 2>/dev/null || true
 
 cd - > /dev/null
 
