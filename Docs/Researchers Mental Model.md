@@ -1,5 +1,4 @@
 
----
 
 ## The Researcher's Mental Model
 
@@ -100,7 +99,7 @@ Your job on every engagement, every box, every target is not to find bugs. It is
 
 ```
 Average player:   service + version → searchsploit → run → shell
-Researcher:       documentation → assumptions → trust boundary → 
+Researcher:       documentation → assumptions → trust boundary →
                   preconditions → exploit design → shell
 ```
 
