@@ -1,8 +1,33 @@
 
+# The Researcher's Mental Model
 
-## The Researcher's Mental Model
+## A Paradigm Shift from Exploit-Runner to Vulnerability Researcher
 
-### A Framework for Any Target, Any Technology
+## Framework for Any Target, Any Technology
+
+
+> What it is, how it works, and how to adopt it.
+
+> A short mental checklist for approaching any target — box, API, library, or protocol
+> the same way a researcher does instead of the way a script-runner does.
+> Work the five layers before writing exploit code, then run the inner monologue before pulling the trigger.
+> The core idea: every vulnerability lives in the gap between what a system *assumes* and what reality *permits*
+> your job is to find the assumption, not just the bug.
+
+---
+
+## Table of Contents
+
+- [Phase 1 — Understand Before You Attack](#phase-1-understand-before-you-attack)
+- [Phase 2 — The Five Layer Thought Process](#phase-2-the-five-layer-thought-process)
+  - [Layer 1 — Intended Use](#layer-1-intended-use)
+  - [Layer 2 — Developer Assumptions](#layer-2-developer-assumptions)
+  - [Layer 3 — Where Assumptions Break](#layer-3-where-assumptions-break)
+  - [Layer 4 — Blast Radius](#layer-4-blast-radius)
+  - [Layer 5 — Vulnerability or Intended Behavior?](#layer-5-vulnerability-or-intended-behavior)
+- [Phase 3 — The Inner Monologue](#phase-3-the-inner-monologue)
+- [The One Sentence to Internalize](#the-one-sentence-to-internalize)
+- [What This Looks Like in Practice](#what-this-looks-like-in-practice)
 
 ---
 
@@ -26,9 +51,9 @@ Understand the legitimate purpose completely before looking for anything broken.
 
 **Layer 2 — Developer Assumptions**
 
-> "What did the developer assume would always be true when they built this?"
+> **"What did the developer assume would always be true when they built this?"**
 
-This is the most important layer. Developers make implicit assumptions constantly:
+This is **the most important layer**. **Developers** make implicit **assumptions** constantly:
 
 - About who the caller is
 - About what the input contains
@@ -87,11 +112,12 @@ Who executes the payload and in what context?
 
 ---
 
-### The One Sentence to Internalize
+## The One Sentence to Internalize
 
 > Every vulnerability lives in the gap between what a system **assumes** and what **reality permits**.
 
-Your job on every engagement, every box, every target is not to find bugs. It is to find **assumptions** — and test whether adversarial reality respects them.
+- Your job on every engagement, every box, every target is not to find bugs.
+- It is to find **assumptions** — and test whether adversarial reality respects them.
 
 ---
 
@@ -105,8 +131,13 @@ Researcher:       documentation → assumptions → trust boundary →
 
 The average player finds what's already been found. The researcher finds what hasn't been found yet.
 
-The difference is not technical skill. It is the habit of asking why something exists before asking how to break it.
+_The difference is not technical skill. It is the habit of asking why something exists before asking how to break it.
 
 ---
 
-That's the paradigm shift. That's the inner monologue. Internalize the five layers and the six inner monologue questions — run them on every technology you encounter, not just the ones that look obviously vulnerable. The ones that look secure are where the interesting assumptions live.
+That's the paradigm shift.
+That's the inner monologue.
+Internalize the five layers and the six inner monologue questions — run them on every technology you encounter, not just the ones that look obviously vulnerable.
+The ones that look secure are where the interesting assumptions live.
+
+
