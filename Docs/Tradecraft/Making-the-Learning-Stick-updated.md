@@ -175,4 +175,3 @@ Closing that gap is the real work of the paradigm shift.
 
 ---
 
-This document is now structured for easy reading and future reference. Would you like me to save this as a standalone file (e.g., `Learning-Science-for-Security-Training.md`)?

