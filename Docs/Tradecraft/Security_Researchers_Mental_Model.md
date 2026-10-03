@@ -78,7 +78,7 @@ This is what converts a theoretical finding into an actual vulnerability. A brok
 
 > "Is this a bug, or is this the system working as designed with a broken trust model?"
 
-This is the layer most players skip entirely. Some of the most powerful findings — like Zabbix — are not bugs. They are features with overprivileged callers and insufficient authorization boundaries. Knowing the difference matters because:
+This is the layer most players skip entirely. Some of the most powerful findings are not bugs. They are features with overprivileged callers and insufficient authorization boundaries. Knowing the difference matters because:
 
 - It determines how you write the finding
 - It predicts how the vendor will respond
@@ -116,8 +116,8 @@ Who executes the payload and in what context?
 
 > Every vulnerability lives in the gap between what a system **assumes** and what **reality permits**.
 
-- Your job on every engagement, every box, every target is not to find bugs.
-- It is to find **assumptions** — and test whether adversarial reality respects them.
+- Your job on every engagement, every box, every target is **not** to find bugs.
+- Rather, your job is to find **assumptions** — and test whether adversarial reality respects them.
 
 ---
 
@@ -125,19 +125,19 @@ Who executes the payload and in what context?
 
 ```
 Average player:   service + version → searchsploit → run → shell
+
 Researcher:       documentation → assumptions → trust boundary →
                   preconditions → exploit design → shell
 ```
 
 The average player finds what's already been found. The researcher finds what hasn't been found yet.
 
-_The difference is not technical skill. It is the habit of asking why something exists before asking how to break it.
+The difference is not just technical skill. It is the habit of asking why something exists before asking how to break it.
 
 ---
 
-That's the paradigm shift.
-That's the inner monologue.
-Internalize the five layers and the six inner monologue questions — run them on every technology you encounter, not just the ones that look obviously vulnerable.
-The ones that look secure are where the interesting assumptions live.
+- The paradigm shift.
+- The inner monologue.
+- Internalize these five layers and the six inner monologue questions — run them on every technology you encounter.
 
 
