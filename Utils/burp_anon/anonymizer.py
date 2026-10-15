@@ -10,10 +10,14 @@ Three layers, applied in order of specificity:
 
 All replacements go through `Mapping`, so a value maps to one placeholder.
 """
+
+from __future__ import annotations
+
 import base64
 import json
 import re
 from collections import Counter
+from typing import Any, Callable, Optional
 from urllib.parse import quote_plus, unquote_plus, urlsplit, urlunsplit
 
 from . import detectors as D
@@ -31,6 +35,9 @@ RE_HTML_INPUT_REV = re.compile(
 )
 RE_COOKIE_DOMAIN = re.compile(r"(?i)(;\s*domain=)(\.?)([^;\s]+)")
 
+# A regex replacement callback: takes a match object, returns the replacement.
+_Replacer = Callable[[re.Match], str]
+
 
 def _norm_key(key):
     return re.sub(r"[^a-z0-9]", "", key.lower())
@@ -38,15 +45,18 @@ def _norm_key(key):
 
 def _label(key):
     lab = re.sub(r"[^A-Za-z0-9]+", "_", key).strip("_").upper()
-    return (lab[:24] or "FIELD")
+    return lab[:24] or "FIELD"
 
 
 class Anonymizer:
-    def __init__(self, mapping=None, config=None):
+    def __init__(
+        self, mapping: Optional[Mapping] = None, config: Optional[dict[str, Any]] = None
+    ) -> None:
         from .config import DEFAULT_CONFIG
-        self.cfg = config if config is not None else DEFAULT_CONFIG
+
+        self.cfg: dict[str, Any] = config if config is not None else DEFAULT_CONFIG
         self.mapping = mapping if mapping is not None else Mapping()
-        self.stats = Counter()
+        self.stats: Counter[str] = Counter()
         c = self.cfg
         self.detect = c.get("detect", {})
         self.keep_hosts = {h.lower() for h in c.get("keep_hosts", [])}
@@ -70,6 +80,23 @@ class Anonymizer:
             alt = "|".join(re.escape(t) for t in terms)
             self.terms_re = re.compile(r"(?<![A-Za-z0-9])(?:%s)(?![A-Za-z0-9])" % alt, re.I)
 
+        # Ordered free-text detector pipeline: (detect-flag name, regex, replacer).
+        # _text_no_url() applies each in turn when its flag is on. Order matters
+        # (e.g. email before host so the domain is mapped as part of the email).
+        # `terms` is handled separately in _text_no_url because it is gated on
+        # self.terms_re being built at all.
+        self._text_pipeline: list[tuple[str, re.Pattern, _Replacer]] = [
+            ("email", D.RE_EMAIL, lambda m: self.email(m.group(0))),
+            ("host", D.RE_HOST, lambda m: self.host(m.group(0), strict=True)),
+            ("ipv4", D.RE_IPV4, lambda m: self.ipv4(m.group(0))),
+            ("ipv6", D.RE_IPV6, lambda m: self.ipv6(m.group(0))),
+            ("uuid", D.RE_UUID, lambda m: self.uuid(m.group(0))),
+            ("hex", self.re_hex, lambda m: self._ph("hex", m.group(0), "HEX")),
+            ("card", D.RE_CARD, self._card),
+            ("ssn", D.RE_SSN, lambda m: self._ph("ssn", m.group(0), "SSN")),
+            ("phone", D.RE_PHONE, lambda m: self._ph("phone", m.group(0), "PHONE")),
+        ]
+
     # ------------------------------------------------------------------ utils
     def _ph(self, category, value, label):
         """Generic bracketed placeholder: [LABEL_n]."""
@@ -90,7 +117,7 @@ class Anonymizer:
         return any(s in k for s in self.key_subs)
 
     # ------------------------------------------------------------ shape maps
-    def host(self, h, strict=False):
+    def host(self, h: str, strict: bool = False) -> str:
         """Pseudonymize a hostname, keeping generic subdomains and the TLD shape.
         strict=True (free-text context) only maps names with a known TLD."""
         raw = h
@@ -116,7 +143,9 @@ class Anonymizer:
             base_n = 3
         base = ".".join(labels[-base_n:])
         subs = labels[:-base_n]
-        if base in self.keep_base_hosts or any(base.endswith("." + k) for k in self.keep_base_hosts):
+        if base in self.keep_base_hosts or any(
+            base.endswith("." + k) for k in self.keep_base_hosts
+        ):
             base_ph = base
         else:
             base_ph = self._host_base(base)
@@ -137,7 +166,7 @@ class Anonymizer:
             self.stats["HOST"] += 1
         return ph
 
-    def email(self, e):
+    def email(self, e: str) -> str:
         if self.mapping.is_placeholder(e):
             return e
         local, _, dom = e.rpartition("@")
@@ -148,10 +177,11 @@ class Anonymizer:
             self.stats["EMAIL"] += 1
         return ph
 
-    def ipv4(self, ip):
+    def ipv4(self, ip: str) -> str:
         if self.mapping.is_placeholder(ip) or not D.valid_ipv4(ip):
             return ip
-        if ip in ("127.0.0.1", "0.0.0.0", "255.255.255.255"):
+        # Value comparison for passthrough IPs, not a socket bind.
+        if ip in ("127.0.0.1", "0.0.0.0", "255.255.255.255"):  # nosec B104
             return ip
         if self.keep_private_ips and D.is_private_ip(ip):
             return ip
@@ -170,7 +200,7 @@ class Anonymizer:
             self.stats["IP"] += 1
         return ph
 
-    def ipv6(self, ip):
+    def ipv6(self, ip: str) -> str:
         if self.mapping.is_placeholder(ip) or not D.valid_ipv6(ip):
             return ip
         low = ip.lower()
@@ -183,7 +213,7 @@ class Anonymizer:
             self.stats["IP6"] += 1
         return ph
 
-    def uuid(self, u):
+    def uuid(self, u: str) -> str:
         low = u.lower()
         if self.mapping.is_placeholder(low) or low.startswith("00000000-0000-4000-8000-"):
             return u
@@ -192,7 +222,7 @@ class Anonymizer:
             self.stats["UUID"] += 1
         return ph
 
-    def jwt(self, tok):
+    def jwt(self, tok: str) -> str:
         """Replace a JWT with a synthetic one: header kept (minus kid), claims
         anonymized with the normal rules, signature replaced."""
         if self.mapping.is_placeholder(tok):
@@ -209,7 +239,9 @@ class Anonymizer:
             try:
                 hdr = json.loads(b64d(tok.split(".")[0]))
                 pay = json.loads(b64d(tok.split(".")[1]))
-            except Exception:
+            except (ValueError, IndexError):
+                # not decodable JSON/base64 (binascii.Error and JSONDecodeError
+                # both subclass ValueError); fall back to an opaque placeholder.
                 return "[JWT_%d]" % n
             if isinstance(hdr, dict) and "kid" in hdr:
                 hdr["kid"] = self._ph("field:KID", str(hdr["kid"]), "KID")
@@ -223,7 +255,7 @@ class Anonymizer:
             self.stats["JWT"] += 1
         return ph
 
-    def url(self, u):
+    def url(self, u: str) -> str:
         if self.mapping.is_placeholder(u):
             return u
         trail = ""
@@ -236,11 +268,13 @@ class Anonymizer:
             return self._text_no_url(u) + trail
         netloc = parts.netloc
         userinfo, _, hostport = netloc.rpartition("@")
-        host, _, port = hostport.partition(":") if not hostport.startswith("[") else (hostport, "", "")
+        host, _, port = (
+            hostport.partition(":") if not hostport.startswith("[") else (hostport, "", "")
+        )
         if hostport.startswith("["):
-            host6 = hostport[1:hostport.find("]")]
+            host6 = hostport[1 : hostport.find("]")]
             host = "[" + self.ipv6(host6) + "]"
-            rest = hostport[hostport.find("]") + 1:]
+            rest = hostport[hostport.find("]") + 1 :]
             hostport = host + rest
         else:
             if D.RE_IPV4.fullmatch(host):
@@ -257,7 +291,7 @@ class Anonymizer:
             frag = self.params(frag) if "=" in frag else self._text_no_url(frag)
         return urlunsplit((parts.scheme, userinfo + hostport, path, query, frag)) + trail
 
-    def params(self, qs):
+    def params(self, qs: str) -> str:
         """key=value&key2=value2 (query strings, form bodies, fragments)."""
         out = []
         for pair in qs.split("&"):
@@ -299,7 +333,7 @@ class Anonymizer:
             return self.host(s)
         return None
 
-    def value(self, v, key=None):
+    def value(self, v: str, key: Optional[str] = None) -> str:
         """Anonymize a leaf value (JSON string, form field, cookie...)."""
         if not v or self.mapping.is_placeholder(v):
             return v
@@ -317,7 +351,7 @@ class Anonymizer:
         return v
 
     # ------------------------------------------------------------- text pass
-    def text(self, s):
+    def text(self, s: str) -> str:
         """Generic detectors over free text."""
         if not s or self.mapping.is_placeholder(s):
             return s
@@ -331,27 +365,12 @@ class Anonymizer:
             s = D.RE_URL.sub(lambda m: self.url(m.group(0)), s)
         return self._text_no_url(s)
 
-    def _text_no_url(self, s):
+    def _text_no_url(self, s: str) -> str:
         if not s:
             return s
-        if self._on("email"):
-            s = D.RE_EMAIL.sub(lambda m: self.email(m.group(0)), s)
-        if self._on("host"):
-            s = D.RE_HOST.sub(lambda m: self.host(m.group(0), strict=True), s)
-        if self._on("ipv4"):
-            s = D.RE_IPV4.sub(lambda m: self.ipv4(m.group(0)), s)
-        if self._on("ipv6"):
-            s = D.RE_IPV6.sub(lambda m: self.ipv6(m.group(0)), s)
-        if self._on("uuid"):
-            s = D.RE_UUID.sub(lambda m: self.uuid(m.group(0)), s)
-        if self._on("hex"):
-            s = self.re_hex.sub(lambda m: self._ph("hex", m.group(0), "HEX"), s)
-        if self._on("card"):
-            s = D.RE_CARD.sub(self._card, s)
-        if self._on("ssn"):
-            s = D.RE_SSN.sub(lambda m: self._ph("ssn", m.group(0), "SSN"), s)
-        if self._on("phone"):
-            s = D.RE_PHONE.sub(lambda m: self._ph("phone", m.group(0), "PHONE"), s)
+        for name, rx, fn in self._text_pipeline:
+            if self._on(name):
+                s = rx.sub(fn, s)
         if self._on("terms") and self.terms_re:
             s = self.terms_re.sub(lambda m: self._term(m.group(0)), s)
         return s
@@ -413,10 +432,11 @@ class Anonymizer:
             if self.is_sensitive_key(key):
                 return '"%s":"%s"' % (key, self.value(val, key))
             return m.group(0)
+
         return self.text(RE_JSON_KV.sub(repl, body))
 
     def form_body(self, body):
-        return self.params(body.strip("\r\n")) + body[len(body.rstrip("\r\n")):]
+        return self.params(body.strip("\r\n")) + body[len(body.rstrip("\r\n")) :]
 
     def multipart_body(self, body, boundary):
         delim = "--" + boundary
@@ -432,11 +452,13 @@ class Anonymizer:
             m = re.search(r'name="([^"]*)"', head, re.I)
             name = m.group(1) if m else None
             is_file = re.search(r'filename="', head, re.I)
-            trailing = content[len(content.rstrip("\r\n")):]
+            trailing = content[len(content.rstrip("\r\n")) :]
             core = content.rstrip("\r\n")
             if is_file:
                 if D.is_binary(core):
-                    new = "[binary file content omitted, %d bytes]" % len(core.encode("utf-8", "replace"))
+                    new = "[binary file content omitted, %d bytes]" % len(
+                        core.encode("utf-8", "replace")
+                    )
                 else:
                     new = self.text_body(core)
             else:
@@ -452,7 +474,12 @@ class Anonymizer:
         def xml_repl(m):
             tag = m.group(1).split(":")[-1]
             if self.is_sensitive_key(tag):
-                return "<%s%s>%s</%s>" % (m.group(1), m.group(2), self.value(m.group(3).strip(), tag), m.group(1))
+                return "<%s%s>%s</%s>" % (
+                    m.group(1),
+                    m.group(2),
+                    self.value(m.group(3).strip(), tag),
+                    m.group(1),
+                )
             return m.group(0)
 
         def input_repl(m):
@@ -503,7 +530,9 @@ class Anonymizer:
                 first = name + "=" + val
             else:
                 first = self.text(name) + "=" + self._cookie_value(val.strip())
-        rest = RE_COOKIE_DOMAIN.sub(lambda m: m.group(1) + m.group(2) + self.host(m.group(3)), rest)
+        rest = RE_COOKIE_DOMAIN.sub(
+            lambda m: m.group(1) + m.group(2) + self.host(m.group(3)), rest
+        )
         return first + sep + self.text(rest)
 
     def auth_header(self, value):
@@ -546,12 +575,15 @@ class Anonymizer:
         return lead + self.text(v)
 
     # -------------------------------------------------------------- messages
-    def anonymize(self, text):
+    def anonymize(self, text: str) -> str:
         """Anonymize raw HTTP text (one or more requests/responses, or plain text)."""
         crlf = "\r\n" in text
         norm = text.replace("\r\n", "\n")
         lines = norm.split("\n")
-        msgs, pre, cur, state = [], [], None, None
+        msgs: list[dict[str, Any]] = []
+        pre: list[str] = []
+        cur: Optional[dict[str, Any]] = None
+        state: Optional[str] = None
         prev_blank = True
         for line in lines:
             is_start = bool(RE_REQ_LINE.match(line) or RE_RES_LINE.match(line))
@@ -574,7 +606,7 @@ class Anonymizer:
         if not msgs:
             out = self.plain(norm)
         else:
-            chunks = []
+            chunks: list[str] = []
             if pre:
                 chunks.append(self.plain("\n".join(pre)))
             for m in msgs:
@@ -588,7 +620,7 @@ class Anonymizer:
             try:
                 json.loads(stripped)
                 lead = text[: len(text) - len(text.lstrip())]
-                trail = text[len(text.rstrip()):]
+                trail = text[len(text.rstrip()) :]
                 return lead + self.json_body(stripped) + trail
             except ValueError:
                 pass
@@ -621,15 +653,14 @@ class Anonymizer:
         new_body = body
         if body.strip():
             core = body.rstrip("\r\n")
-            trailing = body[len(core):]
+            trailing = body[len(core) :]
             new_core = self._body(core, hdr_map)
             new_body = new_core + trailing
             if new_core != core and self.cfg.get("update_content_length", True):
                 headers = self._fix_content_length(headers, new_core)
 
         out = [start] + headers
-        if m["body"] or True:
-            out.append("")
+        out.append("")  # blank line terminating the header block (always present)
         if m["body"]:
             out.append(new_body)
         return "\n".join(out)
@@ -645,7 +676,11 @@ class Anonymizer:
             bm = re.search(r'boundary="?([^";,\s]+)"?', ctype)
             if bm:
                 return self.multipart_body(body, bm.group(1))
-        if not ctype and "\n" not in stripped and re.fullmatch(r"[^=&\s]+=[^&\s]*(?:&[^=&\s]+=[^&\s]*)*", stripped):
+        if (
+            not ctype
+            and "\n" not in stripped
+            and re.fullmatch(r"[^=&\s]+=[^&\s]*(?:&[^=&\s]+=[^&\s]*)*", stripped)
+        ):
             return self.form_body(body)
         if "json" not in ctype and stripped[:1] in "{[" and stripped[-1:] in "}]":
             try:
@@ -667,7 +702,7 @@ class Anonymizer:
         return out
 
     # ---------------------------------------------------------------- report
-    def summary(self):
+    def summary(self) -> str:
         if not self.stats:
             return "nothing replaced"
         return ", ".join("%s x%d" % (k, v) for k, v in sorted(self.stats.items()))

@@ -13,32 +13,76 @@ replayed against `api.target1.example`).
 LLM's answer back through `burp-anon restore` and the original hosts, cookies
 and tokens are put back, ready for Repeater.
 
-## Quick start
+## Install
+
+The launcher is `Utils/burp-anon` (the directory *above* this one). Pick one:
 
 ```bash
-# make it available everywhere
-ln -s "$PWD/burp-anon" /usr/local/bin/burp-anon   # or add Utils/ to PATH
+# Option A: no install. Run the package from the Utils/ directory.
+cd /path/to/HTB-Scripts/Utils
+python3 -m burp_anon --version
 
-# Copy a request (or request + response) in Burp, then:
-burp-anon -c                      # clipboard in -> anonymized clipboard out
-# ...paste into the LLM...
-burp-anon restore -c              # LLM output on clipboard -> originals restored
+# Option B: put it on your PATH. Note the launcher lives in Utils/, not here.
+ln -s "/path/to/HTB-Scripts/Utils/burp-anon" /usr/local/bin/burp-anon
+burp-anon --version
+```
 
-# Hands-free: everything you copy gets anonymized in place
+The rest of this README writes `burp-anon`; if you didn't symlink it, read that
+as `python3 -m burp_anon` run from `Utils/`.
+
+## The Repeater loop (the normal workflow)
+
+You do **not** paste request/response text as a command-line argument — bare
+arguments are read as *filenames*. Instead, get the traffic in through the
+clipboard or a pipe:
+
+```bash
+# 1. In Burp Repeater, select the request (or response), right-click -> Copy.
+# 2. Anonymize the clipboard in place:
+burp-anon -c -s clientA
+# 3. Paste into the LLM. Work with its answer.
+# 4. Copy the LLM's reply, then turn the placeholders back into real values:
+burp-anon restore -c -s clientA
+# 5. Paste the restored text back into Repeater and send.
+```
+
+`-s clientA` names the session. **`restore` must use the same `-s` as the
+`anon` run that created the mapping** — otherwise the placeholders are unknown
+and `restore` prints `mapping is empty` and changes nothing.
+
+Prefer hands-free? Start `watch` once and every Burp "Copy" is anonymized on
+the clipboard automatically (no `-c` needed per call):
+
+```bash
 burp-anon watch -s clientA -t "Acme Corp" -t acme
+# ...now just Copy in Burp and paste into the LLM; restore with:
+burp-anon restore -c -s clientA
+```
 
-# Files / pipes work too
-burp-anon req.txt res.txt -o anon.txt
-pbpaste | burp-anon -t acme | tee anon.txt
+## The four ways to feed it input
 
+`anon` (and `restore`) read from exactly one source, in this priority:
+
+| How | Example | When |
+| --- | --- | --- |
+| Clipboard (`-c`) | `burp-anon -c` | the Repeater loop above |
+| File path(s) | `burp-anon req.txt res.txt -o anon.txt` | you saved the traffic to a file |
+| Pipe / stdin | `pbpaste \| burp-anon -t acme \| tee anon.txt` | chaining with other tools |
+| Interactive stdin | `burp-anon` then paste, Ctrl-D | quick one-off paste in the terminal |
+
+```bash
 # Burp "Save items" XML export (Proxy history, Sitemap, Repeater tabs)
 burp-anon xml history.xml -o history.txt --xml-out history.anon.xml
 ```
 
-Add `-s NAME` (session) on every call for one engagement so placeholders stay
-consistent across days: `~/.burp-anon/sessions/NAME.json`. Default session is
-`default`. `burp-anon map -s NAME` summarizes it; `--show` prints the secrets;
-`--clear` deletes it when the engagement is over.
+## Sessions
+
+Add `-s NAME` on every call for one engagement so placeholders stay consistent
+across days (the same host always maps to the same `target1.example`):
+`~/.burp-anon/sessions/NAME.json`. Default session is `default`. The mapping is
+also what makes `restore` possible, so anon and restore must share a session.
+`burp-anon map -s NAME` summarizes it; `--show` prints the secrets; `--clear`
+deletes it when the engagement is over.
 
 ## What gets replaced
 

@@ -6,32 +6,42 @@ twenty requests always becomes the same placeholder, so an LLM can still
 reason about relationships between values. The map file is the only place
 the originals live, so guard it (it is written mode 0600).
 """
+
+from __future__ import annotations
+
 import json
 import os
 import re
 from pathlib import Path
+from typing import Callable, Iterator, Optional, Union
 
 
 class Mapping:
-    def __init__(self, path=None):
-        self.path = Path(path).expanduser() if path else None
-        self.forward = {}   # category -> {original: placeholder}
-        self.reverse = {}   # placeholder -> original
-        self.counters = {}  # category -> last counter used
+    def __init__(self, path: Optional[Union[str, Path]] = None) -> None:
+        self.path: Optional[Path] = Path(path).expanduser() if path else None
+        self.forward: dict[str, dict[str, str]] = {}  # category -> {original: placeholder}
+        self.reverse: dict[str, str] = {}  # placeholder -> original
+        self.counters: dict[str, int] = {}  # category -> last counter used
         self.dirty = False
-        self._restore_re = None
+        self._restore_re: Optional[re.Pattern[str]] = None
         if self.path and self.path.exists():
             self.load()
 
     # ---- persistence -----------------------------------------------------
-    def load(self):
+    def load(self) -> None:
+        assert self.path is not None
         data = json.loads(self.path.read_text(encoding="utf-8"))
         self.forward = data.get("forward", {})
         self.counters = data.get("counters", {})
         self.reverse = {ph: orig for cat in self.forward.values() for orig, ph in cat.items()}
         self._restore_re = None
 
-    def save(self):
+    def save(self) -> None:
+        # Directory ownership: this method is the *sole writer* of a session map
+        # file (~/.burp-anon/sessions/<name>.json). Files are addressed by session
+        # name, never ordered by mtime, so the only invariant is the atomic
+        # temp-write + chmod 0600 + replace below. Any other writer to that
+        # directory would be a breaking change.
         if not self.path or not self.dirty:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -42,19 +52,19 @@ class Mapping:
         tmp.replace(self.path)
         self.dirty = False
 
-    def clear(self):
+    def clear(self) -> None:
         self.forward, self.reverse, self.counters = {}, {}, {}
         self.dirty = True
         self._restore_re = None
 
     # ---- lookup ----------------------------------------------------------
-    def is_placeholder(self, value):
+    def is_placeholder(self, value: str) -> bool:
         return value in self.reverse
 
-    def get(self, category, original, make):
+    def get(self, category: str, original: str, make: Callable[[int], str]) -> str:
         """Return the placeholder for `original` in `category`, creating it if
         needed. `make(n)` builds a placeholder from the per-category counter."""
-        if original in self.reverse:          # already a placeholder: leave it
+        if original in self.reverse:  # already a placeholder: leave it
             return original
         cat = self.forward.setdefault(category, {})
         if original in cat:
@@ -68,16 +78,16 @@ class Mapping:
         self._restore_re = None
         return ph
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.reverse)
 
-    def entries(self):
+    def entries(self) -> Iterator[tuple[str, str, str]]:
         for cat, pairs in sorted(self.forward.items()):
             for orig, ph in pairs.items():
                 yield cat, orig, ph
 
     # ---- restore ---------------------------------------------------------
-    def restore(self, text):
+    def restore(self, text: str) -> str:
         """Replace every known placeholder in `text` with its original value."""
         if not self.reverse:
             return text

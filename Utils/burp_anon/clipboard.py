@@ -1,4 +1,7 @@
 """Minimal cross-platform clipboard access (macOS, X11, Wayland, Windows)."""
+
+from __future__ import annotations
+
 import platform
 import shutil
 import subprocess
@@ -6,7 +9,7 @@ import subprocess
 _SYS = platform.system()
 
 
-def _cmds():
+def _cmds() -> tuple[list[str], list[str]]:
     if _SYS == "Darwin":
         return (["pbpaste"], ["pbcopy"])
     if _SYS == "Windows":
@@ -20,11 +23,11 @@ def _cmds():
     raise SystemExit("no clipboard tool found (install xclip, xsel or wl-clipboard)")
 
 
-def read():
+def read() -> str:
     paste, _ = _cmds()
     return subprocess.run(paste, capture_output=True, check=True).stdout.decode("utf-8", "replace")
 
 
-def write(text):
+def write(text: str) -> None:
     _, copy = _cmds()
     subprocess.run(copy, input=text.encode("utf-8"), check=True)
