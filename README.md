@@ -15,3 +15,10 @@ A personal collection of Bash scripts, Python Exploits, and notes. Useful for **
 - Focused on common HTB scenarios (AD, SMB enumeration, scanning, credential extraction)
 - Reusable, well-commented scripts
 - GPL v3 licensed
+
+## Moved out of this repo
+
+- **burp-anon** — pseudonymizes Burp Suite traffic so it can be pasted into an
+  LLM without leaking client data. It outgrew a scripts repo (a real Python
+  package with a CLI, tests and a lint/type/security gate) and now lives in its
+  own project. Previously `Utils/burp_anon/`.
