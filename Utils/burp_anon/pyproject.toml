@@ -1,0 +1,44 @@
+# Tooling configuration for the burp_anon package.
+#
+# This lives inside the package (not at the HTB-Scripts repo root) so the
+# formatting/linting rules apply only to burp_anon and leave the rest of the
+# repo untouched. The pre-commit hooks (../../.pre-commit-config.yaml) point
+# every tool at this file and are scoped with `files: ^Utils/burp_anon/`.
+
+[tool.black]
+line-length = 99
+target-version = ["py38"]
+
+[tool.isort]
+profile = "black"
+line_length = 99
+
+[tool.mypy]
+# Pragmatic baseline that passes today. The stated goal (Python-Best-Practices)
+# is `--strict`; reaching it means annotating every remaining internal helper
+# and local (~200 more annotations). When that work lands, turn these on:
+#   disallow_untyped_defs = true
+#   disallow_any_generics = true
+#   warn_return_any = true
+# Note: runtime still supports 3.8+ (annotations are deferred via
+# `from __future__ import annotations`); this is only the version mypy
+# type-checks against, and current mypy requires >= 3.10 here.
+python_version = "3.10"
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+# Tests use loose typing and asserts; don't gate commits on them.
+module = "tests.*"
+ignore_errors = true
+
+[tool.bandit]
+# B101 (assert_used): asserts are used in the test suite and as cheap internal
+#   invariants (e.g. Mapping.load); not a security concern here.
+# B404/B603 (subprocess): clipboard access shells out to pbpaste/xclip/etc.
+#   Every argv is a hardcoded constant list and shell=True is never used, so
+#   there is no injection surface. Pervasive across clipboard.py, hence a skip
+#   rather than per-line nosec. Other bandit findings are justified inline.
+skips = ["B101", "B404", "B603"]

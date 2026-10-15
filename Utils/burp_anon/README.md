@@ -147,3 +147,25 @@ restorable), `--show-map` (prints the new mappings to stderr).
 ```bash
 python3 -m unittest discover -s Utils/burp_anon/tests -v
 ```
+
+## Development
+
+The package has no runtime dependencies, but it ships a dev toolchain (Black,
+isort, flake8, mypy, bandit) wired through pre-commit. Config lives in
+`pyproject.toml` (here) and `.pre-commit-config.yaml` (repo root); every hook is
+scoped to `Utils/burp_anon/`, so the rest of the repo is untouched.
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r Utils/burp_anon/requirements-dev.txt
+pre-commit install                 # wire the git hook (run once)
+
+pre-commit run --all-files         # check everything on demand
+```
+
+Conventions: line length 99; type hints with deferred evaluation
+(`from __future__ import annotations`) so the code still runs on Python 3.8+.
+mypy runs at a pragmatic baseline today (it passes clean); the goal is
+`--strict`, which needs the remaining internal helpers annotated — see the notes
+in `pyproject.toml`. bandit suppressions are justified inline (`# nosec B###`) or,
+for the pervasive subprocess/clipboard calls, documented in `[tool.bandit]`.
