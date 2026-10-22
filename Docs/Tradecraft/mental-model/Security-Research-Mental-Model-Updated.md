@@ -1,5 +1,7 @@
 # The Researcher's Mental Model
 
+_Updated September 2026_
+
 ## Security Researcher Paradigm
 
 ### A Framework for Any Target, Any Technology

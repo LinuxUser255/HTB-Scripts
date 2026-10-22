@@ -1,5 +1,7 @@
 
-# The Researcher's Mental Model
+# The Researcher's Mental Model, - Original
+
+_This, the first version, created April 2026_
 
 ## A Paradigm Shift from Exploit-Runner to Vulnerability Researcher
 
